@@ -20,7 +20,7 @@ public static class OAuthEndpoints
             var c = config.Value;
             return Results.Json(new
             {
-                resource = $"{c.ExternalBaseUrl}/mcp",
+                resource = $"{c.ExternalBaseUrl}/{c.RoutePrefix}",
                 authorization_servers = new[] { c.ExternalBaseUrl },
                 scopes_supported = c.Scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries),
                 bearer_methods_supported = new[] { "header" }
@@ -34,9 +34,9 @@ public static class OAuthEndpoints
             return Results.Json(new
             {
                 issuer = c.ExternalBaseUrl,
-                authorization_endpoint = $"{c.ExternalBaseUrl}/mcp/authorize",
-                token_endpoint = $"{c.ExternalBaseUrl}/mcp/token",
-                registration_endpoint = $"{c.ExternalBaseUrl}/mcp/register",
+                authorization_endpoint = $"{c.ExternalBaseUrl}/{c.RoutePrefix}/authorize",
+                token_endpoint = $"{c.ExternalBaseUrl}/{c.RoutePrefix}/token",
+                registration_endpoint = $"{c.ExternalBaseUrl}/{c.RoutePrefix}/register",
                 response_types_supported = new[] { "code" },
                 grant_types_supported = new[] { "authorization_code", "refresh_token" },
                 token_endpoint_auth_methods_supported = new[] { "none", "client_secret_post" },
@@ -109,7 +109,7 @@ public static class OAuthEndpoints
 
             logger.LogInformation("OAuth authorize: client={ClientId}, redirecting to Entra ID, internalState={State}", clientId, internalState);
 
-            var callbackUri = $"{c.ExternalBaseUrl}/mcp/oauth-callback";
+            var callbackUri = $"{c.ExternalBaseUrl}/{c.RoutePrefix}/oauth-callback";
             var entraUrl = $"{c.EntraAuthorizeUrl}" +
                 $"?client_id={HttpUtility.UrlEncode(c.ClientId)}" +
                 $"&response_type=code" +
@@ -157,7 +157,7 @@ public static class OAuthEndpoints
             var miToken = await managedIdentity.GetTokenAsync(
                 new Azure.Core.TokenRequestContext(new[] { "api://AzureADTokenExchange" }));
 
-            var callbackUri = $"{c.ExternalBaseUrl}/mcp/oauth-callback";
+            var callbackUri = $"{c.ExternalBaseUrl}/{c.RoutePrefix}/oauth-callback";
             var tokenRequest = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["client_id"] = c.ClientId,

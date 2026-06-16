@@ -1,7 +1,7 @@
 <!--
   Azure API Management inbound policy for the Zendesk MCP API.
 
-  The public MCP endpoint is exposed at {{APIMGatewayURL}}/mcp and backed by the App Service container.
+  The public MCP endpoint is exposed at {{APIMGatewayURL}}/zendesk-mcp and backed by the App Service.
 
   Named values you must define in APIM:
     EntraIDTenantId   - the new Entra app registration's tenant
@@ -71,7 +71,7 @@
 				<return-response>
 					<set-status code="401" reason="Unauthorized" />
 					<set-header name="WWW-Authenticate" exists-action="override">
-						<value>Bearer resource_metadata="{{APIMGatewayURL}}/mcp/.well-known/oauth-protected-resource"</value>
+						<value>Bearer resource_metadata="{{APIMGatewayURL}}/zendesk-mcp/.well-known/oauth-protected-resource"</value>
 					</set-header>
 					<set-header name="Content-Type" exists-action="override">
 						<value>application/json</value>
