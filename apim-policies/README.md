@@ -17,10 +17,13 @@ What it does:
 
 | Named value | Description |
 | --- | --- |
-| `EntraIDTenantId` | Tenant ID of the dedicated MCP Entra app registration |
-| `EntraIDClientId` | Client ID of that app registration (audience is `api://<client-id>`) |
-| `APIMGatewayURL` | Public gateway base URL of your APIM instance |
+| `ZendeskMcpClientId` | Client ID of this server's Entra app registration (audience is `api://<client-id>`) |
 | `ZendeskMcpApiKey` | secret — the shared key the backend expects (`Mcp:ApiKey` / `MCP_API_KEY`); store in Key Vault |
+| `EntraIDTenantId` | Tenant ID. May be shared with other APIs on the same gateway. |
+| `APIMGatewayURL` | Public gateway base URL. May be shared with other APIs on the same gateway. |
+
+Use server-specific names (e.g. `ZendeskMcp…`) for the client ID and API key so they don't collide with
+other MCP APIs that may already define `EntraIDClientId` on the same APIM instance.
 
 > Concrete values are environment-specific and are **not** committed here — set them as APIM named
 > values in your deployment. (For this deployment they live in the internal deploy notes, not the repo.)

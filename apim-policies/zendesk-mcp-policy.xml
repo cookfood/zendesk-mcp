@@ -43,8 +43,8 @@
 				<validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Authentication required" require-expiration-time="true" require-scheme="Bearer">
 					<openid-config url="https://login.microsoftonline.com/{{EntraIDTenantId}}/v2.0/.well-known/openid-configuration" />
 					<audiences>
-						<audience>api://{{EntraIDClientId}}</audience>
-						<audience>{{EntraIDClientId}}</audience>
+						<audience>api://{{ZendeskMcpClientId}}</audience>
+						<audience>{{ZendeskMcpClientId}}</audience>
 					</audiences>
 					<issuers>
 						<issuer>https://login.microsoftonline.com/{{EntraIDTenantId}}/v2.0</issuer>
