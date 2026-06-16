@@ -1,53 +1,39 @@
 name: Deploy
 
-# Builds the container, pushes it to GitHub Container Registry, and deploys to
-# Azure App Service (for Containers). Wire up the secrets/vars noted below before
-# enabling.
-#
-#   Secrets:  AZURE_WEBAPP_PUBLISH_PROFILE
-#   Vars:     AZURE_WEBAPP_NAME   (the App Service name)
-#
-# The App Service must be configured to pull from ghcr.io and to set the runtime
-# app settings: TRANSPORT=http, ASPNETCORE_ENVIRONMENT=Production, the Zendesk
-# credentials (ideally via Key Vault references), AzureAd:* and OAuth:*.
+# Builds and deploys the server to Azure App Service (code deploy, .NET).
+# Wire up before enabling:
+#   Secret:  AZURE_WEBAPP_PUBLISH_PROFILE
+#   Var:     AZURE_WEBAPP_NAME   (the App Service name)
+# The App Service supplies all environment-specific config (TRANSPORT=http,
+# ASPNETCORE_ENVIRONMENT=Production, Zendesk/AzureAd/OAuth settings, Key Vault refs).
 
 on:
   push:
     branches: ['main']
   workflow_dispatch:
 
-env:
-  IMAGE: ghcr.io/${{ github.repository }}
-
 jobs:
-  build-push-deploy:
+  build-deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          dotnet-version: '10.0.x'
 
-      - name: Build and push image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: src/ZendeskMcp.Server/Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE }}:latest
-            ${{ env.IMAGE }}:${{ github.sha }}
+      - name: Restore & test
+        run: |
+          dotnet restore ZendeskMcp.slnx
+          dotnet test ZendeskMcp.slnx --no-restore -c Release
+
+      - name: Publish
+        run: dotnet publish src/ZendeskMcp.Server/ZendeskMcp.Server.csproj -c Release -o ./publish
 
       - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          images: ${{ env.IMAGE }}:${{ github.sha }}
+          package: ./publish
