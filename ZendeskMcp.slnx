@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/ZendeskMcp.Server/ZendeskMcp.Server.csproj" />
+  <Project Path="tests/ZendeskMcp.Tests/ZendeskMcp.Tests.csproj" />
+</Solution>

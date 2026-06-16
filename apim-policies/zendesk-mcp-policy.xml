@@ -1,0 +1,93 @@
+<!--
+  Azure API Management inbound policy for the Zendesk MCP API.
+
+  The public MCP endpoint is exposed at {{APIMGatewayURL}}/mcp and backed by the App Service container.
+
+  Named values you must define in APIM:
+    EntraIDTenantId   - the new Entra app registration's tenant
+    EntraIDClientId   - the Entra app registration's client id (audience api://<client-id>)
+    APIMGatewayURL    - the public gateway URL, e.g. https://your-apim.azure-api.net
+    ZendeskMcpApiKey  - the shared X-API-Key the backend container expects (Mcp:ApiKey)
+
+  Note (see apim-policies/README.md): CORS headers MUST also be present on the 401
+  error response, otherwise Claude web cannot read the WWW-Authenticate header and
+  the OAuth flow never starts.
+-->
+<policies>
+	<inbound>
+		<base />
+		<cors allow-credentials="true">
+			<allowed-origins>
+				<origin>https://claude.ai</origin>
+			</allowed-origins>
+			<allowed-methods preflight-result-max-age="3600">
+				<method>GET</method>
+				<method>POST</method>
+				<method>OPTIONS</method>
+				<method>DELETE</method>
+			</allowed-methods>
+			<allowed-headers>
+				<header>*</header>
+			</allowed-headers>
+			<expose-headers>
+				<header>*</header>
+			</expose-headers>
+		</cors>
+		<choose>
+			<!-- OAuth discovery/flow endpoints: pass through without JWT validation -->
+			<when condition="@(context.Request.Url.Path.Contains("/.well-known/") || context.Request.Url.Path.EndsWith("/authorize") || context.Request.Url.Path.EndsWith("/oauth-callback") || context.Request.Url.Path.EndsWith("/token") || context.Request.Url.Path.EndsWith("/register"))">
+				<!-- No auth required — these run before the client has a token -->
+			</when>
+			<!-- All other requests (the MCP protocol): require a valid Entra ID JWT -->
+			<otherwise>
+				<validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Authentication required" require-expiration-time="true" require-scheme="Bearer">
+					<openid-config url="https://login.microsoftonline.com/{{EntraIDTenantId}}/v2.0/.well-known/openid-configuration" />
+					<audiences>
+						<audience>api://{{EntraIDClientId}}</audience>
+						<audience>{{EntraIDClientId}}</audience>
+					</audiences>
+					<issuers>
+						<issuer>https://login.microsoftonline.com/{{EntraIDTenantId}}/v2.0</issuer>
+						<issuer>https://sts.windows.net/{{EntraIDTenantId}}/</issuer>
+					</issuers>
+				</validate-jwt>
+			</otherwise>
+		</choose>
+		<!-- Pass the shared API key to the backend container for its own gate -->
+		<set-header name="X-API-Key" exists-action="override">
+			<value>{{ZendeskMcpApiKey}}</value>
+		</set-header>
+	</inbound>
+	<backend>
+		<base />
+	</backend>
+	<outbound>
+		<base />
+	</outbound>
+	<on-error>
+		<base />
+		<choose>
+			<when condition="@(context.Response.StatusCode == 401)">
+				<return-response>
+					<set-status code="401" reason="Unauthorized" />
+					<set-header name="WWW-Authenticate" exists-action="override">
+						<value>Bearer resource_metadata="{{APIMGatewayURL}}/mcp/.well-known/oauth-protected-resource"</value>
+					</set-header>
+					<set-header name="Content-Type" exists-action="override">
+						<value>application/json</value>
+					</set-header>
+					<set-header name="Access-Control-Allow-Origin" exists-action="override">
+						<value>@(context.Request.Headers.GetValueOrDefault("Origin", ""))</value>
+					</set-header>
+					<set-header name="Access-Control-Allow-Credentials" exists-action="override">
+						<value>true</value>
+					</set-header>
+					<set-header name="Access-Control-Expose-Headers" exists-action="override">
+						<value>WWW-Authenticate</value>
+					</set-header>
+					<set-body>{"jsonrpc":"2.0","error":{"code":-32001,"message":"Authentication required. Follow OAuth flow via WWW-Authenticate header."}}</set-body>
+				</return-response>
+			</when>
+		</choose>
+	</on-error>
+</policies>
