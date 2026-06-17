@@ -21,7 +21,10 @@ public static class OAuthEndpoints
             return Results.Json(new
             {
                 resource = $"{c.ExternalBaseUrl}/{c.RoutePrefix}",
-                authorization_servers = new[] { c.ExternalBaseUrl },
+                // Must carry the /{RoutePrefix} path so RFC 8414 discovery resolves to THIS
+                // server's metadata (…/zendesk-mcp/.well-known/…) and not the gateway-root
+                // metadata served by another OAuth API sharing the gateway.
+                authorization_servers = new[] { $"{c.ExternalBaseUrl}/{c.RoutePrefix}" },
                 scopes_supported = c.Scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries),
                 bearer_methods_supported = new[] { "header" }
             });
@@ -33,7 +36,9 @@ public static class OAuthEndpoints
             var c = config.Value;
             return Results.Json(new
             {
-                issuer = c.ExternalBaseUrl,
+                // issuer must equal the authorization_servers value advertised above so that
+                // clients which validate issuer == discovery URL base accept this document.
+                issuer = $"{c.ExternalBaseUrl}/{c.RoutePrefix}",
                 authorization_endpoint = $"{c.ExternalBaseUrl}/{c.RoutePrefix}/authorize",
                 token_endpoint = $"{c.ExternalBaseUrl}/{c.RoutePrefix}/token",
                 registration_endpoint = $"{c.ExternalBaseUrl}/{c.RoutePrefix}/register",
