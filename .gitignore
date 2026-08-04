@@ -3,6 +3,7 @@ bin/
 obj/
 publish/
 out/
+*.zip
 
 # .NET / Rider / VS
 *.user
