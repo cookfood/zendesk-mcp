@@ -40,7 +40,46 @@ Create a **dedicated** app registration for this resource:
 
 - Expose an API and note its application ID URI (`api://<client-id>`).
 - Add a delegated scope (e.g. `mcp.read`) and set `OAuth:Scopes` accordingly.
-- Add the Web redirect URI `<gateway>/mcp/oauth-callback`.
+- Add the Web redirect URI `<gateway>/<route-prefix>/oauth-callback` (the `<route-prefix>` must match
+  the API URL suffix and `OAuth:RoutePrefix`, e.g. `zendesk-mcp`).
 - After the container is deployed, add a **federated identity credential** whose subject is the App
   Service's managed identity, so the server-to-server token exchange works (see `Auth/OAuthEndpoints.cs`).
   The managed identity doesn't exist until deployment, so this step comes last.
+
+## Authorization-server metadata on a shared gateway
+
+When several MCP servers share one gateway host, a client doing OAuth discovery for an issuer **with a
+path** (`https://<gateway>/<route-prefix>`) requests the RFC 8414 **insertion** URL —
+`https://<gateway>/.well-known/oauth-authorization-server/<route-prefix>` — where the well-known segment
+comes *before* the prefix. The app serves its metadata at `/.well-known/oauth-authorization-server`,
+which APIM exposes at the **path-append** URL (`…/<route-prefix>/.well-known/oauth-authorization-server`).
+If the bare-host insertion URL is routed to a *different* API on the gateway, the client gets a 404 (or
+the wrong server's document) and fails right after discovery.
+
+Fix: add a tiny route that forwards the insertion URL to this app's own metadata endpoint. For example,
+on the gateway-root OAuth API add a `GET` operation at
+`/.well-known/oauth-authorization-server/<route-prefix>` with an operation policy that points the backend
+at this App Service and rewrites the path:
+
+```xml
+<policies>
+  <inbound>
+    <base />
+    <cors allow-credentials="true">
+      <allowed-origins><origin>https://claude.ai</origin></allowed-origins>
+      <allowed-methods><method>GET</method><method>OPTIONS</method></allowed-methods>
+      <allowed-headers><header>*</header></allowed-headers>
+    </cors>
+    <set-backend-service base-url="https://<your-app>.azurewebsites.net" />
+    <set-header name="X-API-Key" exists-action="override"><value>{{ZendeskMcpApiKey}}</value></set-header>
+    <rewrite-uri template="/.well-known/oauth-authorization-server" />
+  </inbound>
+  <backend><base /></backend>
+  <outbound><base /></outbound>
+  <on-error><base /></on-error>
+</policies>
+```
+
+This is anonymous (public discovery metadata, no JWT) and scoped to the one exact path, so it can't
+affect other APIs. If your server is alone on its own host/origin, you don't need this — the bare-host
+discovery URL already maps to your app.
