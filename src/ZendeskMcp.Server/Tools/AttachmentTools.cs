@@ -19,10 +19,9 @@ public static class AttachmentTools
         var (data, contentType) = await client.DownloadAttachmentAsync(contentUrl, cancellationToken);
         var mime = AttachmentValidator.Validate(data, contentType);
 
-        return new ImageContentBlock
-        {
-            Data = data,
-            MimeType = mime,
-        };
+        // FromBytes takes the raw image bytes and base64-encodes them. Assigning the raw bytes
+        // straight to ImageContentBlock.Data instead puts unencoded bytes where the protocol
+        // expects base64, and every client rejects the block as an invalid base64 string.
+        return ImageContentBlock.FromBytes(data, mime);
     }
 }
