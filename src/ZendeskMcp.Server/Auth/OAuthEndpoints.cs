@@ -207,6 +207,7 @@ public static class OAuthEndpoints
             IOptions<OAuthConfig> config,
             AuthorizationStore store,
             IHttpClientFactory httpClientFactory,
+            Azure.Identity.ManagedIdentityCredential managedIdentity,
             ILogger<AuthorizationStore> logger) =>
         {
             var form = await request.ReadFormAsync();
@@ -216,17 +217,33 @@ public static class OAuthEndpoints
             {
                 var c = config.Value;
                 var refreshToken = form["refresh_token"].FirstOrDefault() ?? "";
+                if (string.IsNullOrEmpty(refreshToken))
+                    return Results.BadRequest(new { error = "invalid_request", error_description = "refresh_token is required" });
+
+                // The app registration is a confidential client, so the refresh grant must be
+                // authenticated with the managed-identity client assertion, exactly like the
+                // authorisation-code exchange in /oauth-callback.
+                var miToken = await managedIdentity.GetTokenAsync(
+                    new Azure.Core.TokenRequestContext(new[] { "api://AzureADTokenExchange" }));
+
                 var refreshRequest = new FormUrlEncodedContent(new Dictionary<string, string>
                 {
                     ["client_id"] = c.ClientId,
                     ["grant_type"] = "refresh_token",
                     ["refresh_token"] = refreshToken,
-                    ["scope"] = c.Scopes
+                    ["scope"] = c.Scopes,
+                    ["client_assertion_type"] = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                    ["client_assertion"] = miToken.Token
                 });
 
                 var httpClient = httpClientFactory.CreateClient();
                 var refreshResponse = await httpClient.PostAsync(c.EntraTokenUrl, refreshRequest);
                 var refreshJson = await refreshResponse.Content.ReadAsStringAsync();
+
+                if (refreshResponse.IsSuccessStatusCode)
+                    logger.LogInformation("Token endpoint: refresh grant succeeded");
+                else
+                    logger.LogWarning("Token endpoint: refresh grant failed: {Status} {Body}", refreshResponse.StatusCode, refreshJson);
 
                 return Results.Content(refreshJson, "application/json", statusCode: (int)refreshResponse.StatusCode);
             }

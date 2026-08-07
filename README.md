@@ -195,8 +195,8 @@ In **Microsoft Entra ID → App registrations → New registration**:
 4. *(Do this last, after Step 2.)* The server exchanges the auth code with Entra using a **federated
    identity credential** rather than a client secret. Once the App Service exists, add a federated
    credential on the app registration whose subject is the **App Service's managed identity**. (See
-   `Auth/OAuthEndpoints.cs` — the callback uses `ManagedIdentityCredential` + a client assertion.) No
-   client secret to store or rotate.
+   `Auth/OAuthEndpoints.cs` — the callback and the token endpoint's refresh grant use
+   `ManagedIdentityCredential` + a client assertion.) No client secret to store or rotate.
 
 ### Step 2 — Deploy the container to App Service
 
@@ -356,7 +356,10 @@ Two separate layers — keep them apart:
      Microsoft Entra ID JWT, and the server exposes an OAuth 2.1 bridge (`Auth/OAuthEndpoints.cs`):
      it presents itself as the authorization server (metadata + dynamic client registration), and
      bridges the flow to Entra, keeping two PKCE layers — one with the MCP client and an internal one
-     with Entra.
+     with Entra. Refresh grants are bridged the same way: the server forwards the client's refresh
+     token to Entra together with a managed-identity client assertion, so sessions renew without
+     re-prompting (this requires `offline_access` in `OAuth__Scopes` — without it Entra never issues
+     a refresh token).
 
 ---
 
@@ -368,6 +371,7 @@ Two separate layers — keep them apart:
 | Discovery resolves the **wrong** server's metadata | `authorization_servers` advertised as the bare host on a shared gateway. | Set `OAuth__ExternalBaseUrl` + `OAuth__RoutePrefix` so the issuer carries the path; see [discovery note](#oauth-discovery-on-a-shared-gateway). |
 | Client fails right after discovery (e.g. `client_uri` / metadata not found) | Auth-server metadata not served at the RFC 8414 **insertion** URL. | Add the insertion-path route; verify with the three `curl`s above. |
 | Claude web silently never starts OAuth | 401 response missing CORS headers. | Ensure the policy's `<on-error>` block sets the CORS headers (it does by default). |
+| Users must re-authenticate roughly every hour | No refresh token issued (`offline_access` missing from the deployed `OAuth__Scopes`), or Entra rejects the refresh grant (`AADSTS7000218`) because it lacks a client assertion. | Include `offline_access` in `OAuth__Scopes` and re-authenticate once; ensure the build sends the managed-identity client assertion on refresh. |
 | Deploy fails: `No credentials found` | CD not wired. | Set `AZURE_WEBAPP_PUBLISH_PROFILE` + `AZURE_WEBAPP_NAME`, or add `azure/login`. |
 | Startup warns *Zendesk credentials are not fully configured* | Missing Zendesk env vars. | Set `ZENDESK_SUBDOMAIN`, `ZENDESK_EMAIL`, `ZENDESK_API_TOKEN`. |
 | Values look right but auth to Zendesk fails from Docker | `.env` saved with CRLF line endings leaking `\r` (the code trims, but double-check). | Save `.env` with LF line endings. |
