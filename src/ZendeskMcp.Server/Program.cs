@@ -111,7 +111,13 @@ async Task RunHttpAsync(string[] commandArgs)
             o.ServerInfo = new() { Name = serverName, Version = serverVersion };
             o.ServerInstructions = serverInstructions;
         })
-        .WithHttpTransport()
+        // Stateless: no MCP session state is held in process memory. Every tool here is a
+        // plain request/response call against the Zendesk REST API using shared service-account
+        // credentials from configuration, so there is nothing to keep between requests.
+        // Stateful mode expires a session after IdleTimeout (default 2 hours) and loses every
+        // session on restart or scale-out. A client that then replays its old Mcp-Session-Id
+        // gets a 404 "Session not found" and cannot recover without re-adding the connector.
+        .WithHttpTransport(o => o.Stateless = true)
         .WithToolsFromAssembly()
         .WithPromptsFromAssembly()
         .WithResourcesFromAssembly();
