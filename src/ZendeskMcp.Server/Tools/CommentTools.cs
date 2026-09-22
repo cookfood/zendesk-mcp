@@ -8,12 +8,19 @@ namespace ZendeskMcp.Server.Tools;
 [McpServerToolType]
 public static class CommentTools
 {
-    [McpServerTool(Name = "get_ticket_comments"), Description("Retrieve all comments (conversation) for a ticket by its ID.")]
-    public static Task<string> GetTicketComments(
+    [McpServerTool(Name = "get_ticket_comments"), Description(
+        "Retrieve all comments (conversation) for a ticket by its ID. Inline (pasted) " +
+        "screenshots embedded in a comment body are surfaced in that comment's " +
+        "'attachments' array with \"inline\": true and a content_url; fetch them the same " +
+        "way as any attachment, via get_ticket_attachment.")]
+    public static async Task<string> GetTicketComments(
         ZendeskClient client,
         [Description("The ID of the ticket whose comments to retrieve.")] long ticketId,
         CancellationToken cancellationToken)
-        => client.SendAsync(HttpMethod.Get, $"tickets/{ticketId}/comments.json", cancellationToken: cancellationToken);
+    {
+        var json = await client.SendAsync(HttpMethod.Get, $"tickets/{ticketId}/comments.json", cancellationToken: cancellationToken);
+        return InlineImageEnricher.Enrich(json);
+    }
 
     [McpServerTool(Name = "create_ticket_comment"), Description("Add a comment to an existing ticket. Comments are public by default.")]
     public static Task<string> CreateTicketComment(
