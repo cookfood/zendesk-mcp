@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using Microsoft.Identity.Web;
 using ZendeskMcp.Server.Auth;
+using ZendeskMcp.Server.Mcp;
 using ZendeskMcp.Server.Resources;
 using ZendeskMcp.Server.Zendesk;
 
@@ -52,6 +53,7 @@ async Task RunStdioAsync(string[] commandArgs)
         {
             o.ServerInfo = new() { Name = serverName, Version = serverVersion };
             o.ServerInstructions = serverInstructions;
+            o.UseReadableToolErrors();
         })
         .WithStdioServerTransport()
         .WithToolsFromAssembly()
@@ -110,6 +112,7 @@ async Task RunHttpAsync(string[] commandArgs)
         {
             o.ServerInfo = new() { Name = serverName, Version = serverVersion };
             o.ServerInstructions = serverInstructions;
+            o.UseReadableToolErrors();
         })
         // Stateless: no MCP session state is held in process memory. Every tool here is a
         // plain request/response call against the Zendesk REST API using shared service-account
