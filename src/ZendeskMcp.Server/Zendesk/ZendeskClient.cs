@@ -10,23 +10,28 @@ namespace ZendeskMcp.Server.Zendesk;
 /// A thin, self-contained client over the Zendesk REST API v2. It deliberately
 /// has no organisation-internal dependencies.
 ///
-/// Authentication uses the shared service account via HTTP Basic auth in the
-/// documented <c>{email}/token:{api_token}</c> form. The e-mail determines which
-/// agent actions are attributed to.
+/// Authentication uses HTTP Basic auth in the documented
+/// <c>{email}/token:{api_token}</c> form. The e-mail determines which agent actions
+/// are attributed to: the shared <see cref="ZendeskOptions.Email"/> by default, or the
+/// agent mapped to the signed-in user when an <see cref="IZendeskAgentContext"/> is
+/// supplied (see <see cref="UserLoginMode.Mapped"/>).
 /// </summary>
 public sealed class ZendeskClient
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ZendeskOptions _options;
-    private readonly string _authHeader;
+    private readonly IZendeskAgentContext? _agentContext;
+    private readonly string _sharedAuthHeader;
 
-    public ZendeskClient(IHttpClientFactory httpClientFactory, IOptions<ZendeskOptions> options)
+    public ZendeskClient(
+        IHttpClientFactory httpClientFactory,
+        IOptions<ZendeskOptions> options,
+        IZendeskAgentContext? agentContext = null)
     {
         _httpClientFactory = httpClientFactory;
         _options = options.Value;
-
-        var raw = $"{_options.Email}/token:{_options.ApiToken}";
-        _authHeader = Convert.ToBase64String(Encoding.UTF8.GetBytes(raw));
+        _agentContext = agentContext;
+        _sharedAuthHeader = EncodeAuthHeader(_options.Email);
     }
 
     /// <summary>
@@ -41,9 +46,10 @@ public sealed class ZendeskClient
         object? jsonBody = null,
         CancellationToken cancellationToken = default)
     {
+        var authHeader = GetAuthHeader();
         var url = BuildUrl(path, query);
         using var request = new HttpRequestMessage(method, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Basic", _authHeader);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Basic", authHeader);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
         if (jsonBody is not null)
@@ -73,10 +79,11 @@ public sealed class ZendeskClient
         string contentUrl,
         CancellationToken cancellationToken = default)
     {
+        var authHeader = GetAuthHeader();
         var client = _httpClientFactory.CreateClient($"{nameof(ZendeskClient)}.NoRedirect");
 
         using var first = new HttpRequestMessage(HttpMethod.Get, contentUrl);
-        first.Headers.Authorization = new AuthenticationHeaderValue("Basic", _authHeader);
+        first.Headers.Authorization = new AuthenticationHeaderValue("Basic", authHeader);
         using var firstResponse = await client.SendAsync(first, cancellationToken);
 
         HttpResponseMessage finalResponse = firstResponse;
@@ -105,6 +112,28 @@ public sealed class ZendeskClient
             redirectResponse?.Dispose();
         }
     }
+
+    /// <summary>
+    /// Returns the Basic auth value for the current request. With an agent context, the
+    /// e-mail is resolved per request; if the caller has no mapped agent the request is
+    /// refused here, before anything is sent to Zendesk.
+    /// </summary>
+    private string GetAuthHeader()
+    {
+        if (_agentContext is null) return _sharedAuthHeader;
+
+        var agentEmail = _agentContext.AgentEmail;
+        if (string.IsNullOrWhiteSpace(agentEmail))
+        {
+            throw new InvalidOperationException(
+                "No Zendesk agent is mapped to the signed-in user, so the request was not sent to Zendesk.");
+        }
+
+        return EncodeAuthHeader(agentEmail);
+    }
+
+    private string EncodeAuthHeader(string email) =>
+        Convert.ToBase64String(Encoding.UTF8.GetBytes($"{email}/token:{_options.ApiToken}"));
 
     private string BuildUrl(string path, IReadOnlyDictionary<string, string?>? query)
     {

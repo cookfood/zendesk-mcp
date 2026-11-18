@@ -12,15 +12,7 @@ public class ApiKeyAuthMiddleware(RequestDelegate next, IConfiguration configura
 
     public async Task InvokeAsync(HttpContext context)
     {
-        var path = context.Request.Path;
-        var isExempt = path.StartsWithSegments("/healthz")
-            || path.StartsWithSegments("/.well-known")
-            || path.StartsWithSegments("/authorize")
-            || path.StartsWithSegments("/oauth-callback")
-            || path.StartsWithSegments("/token")
-            || path.StartsWithSegments("/register");
-
-        if (string.IsNullOrEmpty(_apiKey) || isExempt)
+        if (string.IsNullOrEmpty(_apiKey) || PublicPaths.IsPublic(context.Request.Path))
         {
             await next(context);
             return;

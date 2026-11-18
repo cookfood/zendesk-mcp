@@ -14,6 +14,8 @@ Highlights:
   team's open tickets).
 - **Two transports from one build**: `stdio` for running locally, and `http` for hosting so it can be
   used from **Claude web** (and remote **Claude Code**) over HTTPS with OAuth.
+- **Optional per-user Zendesk agents**: when people sign in with their work accounts, each person can
+  act as a Zendesk agent you choose for them, and anyone you have not listed is turned away.
 
 ---
 
@@ -22,6 +24,7 @@ Highlights:
 - [Tools](#tools)
 - [Pick how you want to run it](#pick-how-you-want-to-run-it)
 - [Configuration reference](#configuration-reference)
+  - [Per-user Zendesk agents](#per-user-zendesk-agents-path-3-only)
 - [Path 1 — Local Docker (stdio)](#path-1--local-docker-stdio)
 - [Path 2 — Self-hosted HTTP (API key)](#path-2--self-hosted-http-api-key)
 - [Path 3 — Azure: hosted HTTPS with OAuth (Claude web)](#path-3--azure-hosted-https-with-oauth-claude-web)
@@ -62,9 +65,10 @@ There are three ways to run the server. Start at the top — each path is a supe
 | 2 | **Self-hosted HTTP** | `http` | anything that can reach the host + has the key | shared API key header | small |
 | 3 | **Azure + OAuth** | `http` | **Claude web** and remote clients | Microsoft Entra ID OAuth 2.1 | most |
 
-All three use the **same build and the same Zendesk credentials** (a single shared service account — see
-[How authentication works](#how-authentication-works)). The only differences are the transport and how
-clients authenticate *to the server*.
+All three use the **same build and the same Zendesk credentials**. By default every request is sent as one
+shared agent (see [How authentication works](#how-authentication-works)); Path 3 can instead send each
+signed-in person's requests as their own agent (see [Per-user Zendesk agents](#per-user-zendesk-agents-path-3-only)).
+The only other differences are the transport and how clients authenticate *to the server*.
 
 > The hosting steps below use **Azure** as the worked example because the OAuth bridge ships ready for
 > Microsoft Entra ID. Nothing forces that choice: the container is a plain ASP.NET app, so you can run
@@ -84,7 +88,7 @@ Every setting can be supplied as an **environment variable** (handy with `--env-
 | Setting | Env var | Example | Notes |
 | --- | --- | --- | --- |
 | Subdomain | `ZENDESK_SUBDOMAIN` | `acme` | for `acme.zendesk.com` |
-| Agent e-mail | `ZENDESK_EMAIL` | `agent@acme.com` | the account actions are attributed to |
+| Agent e-mail | `ZENDESK_EMAIL` | `agent@acme.com` | the account actions are attributed to (not used when `ZENDESK_USER_LOGIN_MODE` is `Mapped`) |
 | API token | `ZENDESK_API_TOKEN` | `…` | created in Zendesk Admin Centre → Apps and integrations → APIs → Zendesk API |
 
 Copy [`.env.example`](.env.example) to `.env` and fill these in.
@@ -115,6 +119,59 @@ runs the OAuth bridge. These map to the `AzureAd` and `OAuth` config sections:
 `ExternalBaseUrl` + `RoutePrefix` are how the server advertises its own OAuth URLs, e.g.
 `https://your-gateway.example.com/zendesk-mcp/authorize`. Getting these two right is the single most
 important part of Path 3 — see [the OAuth discovery note](#oauth-discovery-on-a-shared-gateway).
+
+### Per-user Zendesk agents (Path 3 only)
+
+By default every request goes to Zendesk as the one agent in `ZENDESK_EMAIL`. When people sign in with
+their own work accounts (Path 3), you can instead choose which Zendesk agent each person acts as, and
+turn away anyone you have not listed.
+
+| Setting | Env var | Example | Notes |
+| --- | --- | --- | --- |
+| User login mode | `ZENDESK_USER_LOGIN_MODE` (`Zendesk:UserLoginMode`) | `Mapped` | `Shared` (default): everyone acts as `ZENDESK_EMAIL`. `Mapped`: each signed-in person acts as their mapped agent, and anyone else is refused. |
+| User mappings | `ZENDESK_USER_MAPPINGS` (`Zendesk:UserMappings`) | `alice@example.com=support@example.com; bob@example.com=support@example.com; carol@example.com` | Required in `Mapped` mode. Ignored (with a startup warning) in `Shared` mode. |
+
+How to write the mapping:
+
+- Each entry is `sign-in address=Zendesk agent address`, e.g. `alice@example.com=support@example.com`.
+- An address on its own maps to itself: `carol@example.com` is short for
+  `carol@example.com=carol@example.com`.
+- Separate entries with `;`, `,` or new lines. Several people can share one agent. Case is ignored.
+- Hosting platforms such as App Service don't allow `@` in setting **names**, so put the whole mapping
+  in the one setting's **value** (`ZENDESK_USER_MAPPINGS` or `Zendesk__UserMappings`).
+- In `appsettings.json` you can also give a list:
+
+  ```json
+  "Zendesk": {
+    "UserLoginMode": "Mapped",
+    "UserMappings": [
+      "alice@example.com=support@example.com",
+      "bob@example.com=support@example.com",
+      "carol@example.com"
+    ]
+  }
+  ```
+
+What to know:
+
+- **Which address is matched.** The server reads the person's sign-in address from their Entra ID token
+  (`preferred_username`, then `upn`, then `email`). For members of your tenant this is their user
+  principal name, which in most organisations is also their e-mail address. If a mapping doesn't match,
+  the server log shows the address it saw.
+- **One token, many agents.** Each mapped Zendesk address must be an agent or admin in your Zendesk
+  account. A Zendesk API token works with any agent's e-mail, so the one `ZENDESK_API_TOKEN` covers
+  everyone. `ZENDESK_EMAIL` is not used.
+- **Who gets refused, and where.** Someone outside the mapping is stopped at sign-in (the OAuth callback
+  sends `access_denied` back to their client) and again on every MCP request (`403`). A request with no
+  valid sign-in gets `401`. The health check and OAuth endpoints stay open, because people need them to
+  sign in.
+- **Entra sign-in is required.** `Mapped` mode needs to know who is calling, so it works only with the
+  HTTP transport in Production. The server refuses to start in `Mapped` mode on stdio or with the API
+  key (Paths 1 and 2), or with an empty or malformed mapping.
+- **Changes need a restart.** The mapping is read at startup. On App Service, saving the app settings
+  restarts the app. Once restarted, someone you removed is refused even if their token is still valid.
+- **Shared knowledge base.** The `zendesk://knowledge-base` resource is cached for an hour and shared by
+  everyone, whichever agent fetched it.
 
 ---
 
@@ -217,6 +274,9 @@ OAuth__RoutePrefix=zendesk-mcp
 ZENDESK_SUBDOMAIN=...      # ideally Key Vault references
 ZENDESK_EMAIL=...
 ZENDESK_API_TOKEN=...
+# Optional — per-user Zendesk agents (see the configuration reference):
+# ZENDESK_USER_LOGIN_MODE=Mapped
+# ZENDESK_USER_MAPPINGS=alice@example.com=support@example.com; carol@example.com
 ```
 
 Enable the App Service's **system-assigned managed identity** (needed by Step 1.4). Keep the App Service
@@ -345,9 +405,11 @@ Once connected, try `search_tickets` with a query like `group:"Dev Team" status:
 
 Two separate layers — keep them apart:
 
-1. **Talking to Zendesk.** The server uses one **shared service account** (an `email` / `api_token`
-   pair, HTTP Basic auth). Every action is attributed to that account. This is the same in all three
-   paths.
+1. **Talking to Zendesk.** The server uses one Zendesk **API token** with an agent e-mail (HTTP Basic
+   auth, `email/token:api_token`). In `Shared` mode (the default, all three paths) every action is
+   attributed to the one **shared service account** in `ZENDESK_EMAIL`. In `Mapped` mode (Path 3 only)
+   the e-mail is chosen for each request from the signed-in person — see
+   [Per-user Zendesk agents](#per-user-zendesk-agents-path-3-only).
 2. **Talking to the server.**
    - **stdio (Path 1):** nothing to authenticate — you run the process.
    - **http, non-Production (Path 2):** the `ApiKeyAuthMiddleware` checks the `X-API-Key` header against
@@ -375,14 +437,20 @@ Two separate layers — keep them apart:
 | Users must re-authenticate roughly every hour | No refresh token issued (`offline_access` missing from the deployed `OAuth__Scopes`), or Entra rejects the refresh grant (`AADSTS7000218`) because it lacks a client assertion. | Include `offline_access` in `OAuth__Scopes` and re-authenticate once; ensure the build sends the managed-identity client assertion on refresh. |
 | Deploy fails: `No credentials found` | CD not wired. | Set `AZURE_WEBAPP_PUBLISH_PROFILE` + `AZURE_WEBAPP_NAME`, or add `azure/login`. |
 | Startup warns *Zendesk credentials are not fully configured* | Missing Zendesk env vars. | Set `ZENDESK_SUBDOMAIN`, `ZENDESK_EMAIL`, `ZENDESK_API_TOKEN`. |
+| Someone gets `access_denied` at sign-in, or `403 … is not allowed to use this server` | `Mapped` mode is on and their sign-in address is not in `ZENDESK_USER_MAPPINGS` (or their token carries a different address from the one you mapped). | Add the address shown in the server log's warning, then restart. |
+| Server stops at startup: *UserLoginMode 'Mapped' needs …* | `Mapped` mode on stdio or non-Production HTTP, where there is no signed-in user. | Use Path 3, or set `ZENDESK_USER_LOGIN_MODE=Shared`. |
+| Zendesk returns `401` for one person only | In `Mapped` mode, their mapped Zendesk address is not an agent in the account. | Map them to an existing agent. |
 | Values look right but auth to Zendesk fails from Docker | `.env` saved with CRLF line endings leaking `\r` (the code trims, but double-check). | Save `.env` with LF line endings. |
 
 ---
 
 ## Security notes
 
-- Because there is a single shared Zendesk account, anyone who can reach the server can act as that
-  account. Keep the credentials in a secret store and keep the server access-controlled.
+- In `Shared` mode (the default) there is a single shared Zendesk account, so anyone who can reach the
+  server can act as that account. Keep the credentials in a secret store and keep the server
+  access-controlled.
+- `Mapped` mode limits the server to the people you list, each acting as the agent you chose. The API
+  token itself can still act as **any** agent, so guard it just as closely.
 - `zendesk_request` can call **any** endpoint, including destructive ones. It is unrestricted by default
   because hosted access is gated by OAuth. To narrow it, restrict the allowed HTTP methods in
   `src/ZendeskMcp.Server/Tools/GenericTools.cs`.
@@ -398,7 +466,7 @@ Two separate layers — keep them apart:
 ```
 src/ZendeskMcp.Server/
   Program.cs            # host + dual-transport switch (stdio / http)
-  Auth/                 # OAuth 2.1 bridge to Entra ID + API key middleware
+  Auth/                 # OAuth 2.1 bridge to Entra ID, API key middleware, per-user login gate
   Zendesk/              # ZendeskClient, options, attachment validation (no host-internal deps)
   Tools/                # the MCP tools
   Prompts/              # analyze-ticket, draft-ticket-response

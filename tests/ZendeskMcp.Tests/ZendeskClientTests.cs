@@ -65,6 +65,46 @@ public class ZendeskClientTests
         Assert.Contains("RecordNotFound", ex.Message);
     }
 
+    [Fact]
+    public async Task SendAsync_WithAgentContext_SendsAsTheMappedAgent()
+    {
+        var handler = new CapturingHandler();
+        var options = Options.Create(new ZendeskOptions
+        {
+            Subdomain = "acme",
+            Email = "shared@acme.com",
+            ApiToken = "secret-token",
+        });
+        var client = new ZendeskClient(new StubHttpClientFactory(handler), options, new FixedAgentContext("alice@acme.com"));
+
+        await client.SendAsync(HttpMethod.Get, "users/me.json");
+
+        var expected = Convert.ToBase64String(Encoding.UTF8.GetBytes("alice@acme.com/token:secret-token"));
+        Assert.Equal(expected, handler.LastRequest!.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task SendAsync_WithAgentContext_RefusesWithoutCallingZendesk_WhenNoAgentIsMapped()
+    {
+        var handler = new CapturingHandler();
+        var options = Options.Create(new ZendeskOptions
+        {
+            Subdomain = "acme",
+            Email = "shared@acme.com",
+            ApiToken = "secret-token",
+        });
+        var client = new ZendeskClient(new StubHttpClientFactory(handler), options, new FixedAgentContext(null));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.SendAsync(HttpMethod.Get, "users/me.json"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.DownloadAttachmentAsync("https://acme.zendesk.com/attachments/1"));
+        Assert.Null(handler.LastRequest);
+    }
+
+    private sealed class FixedAgentContext(string? agentEmail) : IZendeskAgentContext
+    {
+        public string? AgentEmail => agentEmail;
+    }
+
     private sealed class CapturingHandler : HttpMessageHandler
     {
         public HttpRequestMessage? LastRequest { get; private set; }

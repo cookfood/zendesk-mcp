@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Web;
 using Microsoft.Extensions.Options;
+using ZendeskMcp.Server.Zendesk;
 
 namespace ZendeskMcp.Server.Auth;
 
@@ -134,6 +135,7 @@ public static class OAuthEndpoints
             AuthorizationStore store,
             IHttpClientFactory httpClientFactory,
             Azure.Identity.ManagedIdentityCredential managedIdentity,
+            IOptions<ZendeskOptions> zendeskOptions,
             ILogger<AuthorizationStore> logger) =>
         {
             var c = config.Value;
@@ -185,6 +187,26 @@ public static class OAuthEndpoints
                 return Results.BadRequest(new { error = "token_error", error_description = "Failed to exchange code with Entra ID" });
             }
 
+            // In Mapped mode, turn away anyone outside the user mappings now, at sign-in, so
+            // they get a clear error instead of a connector that fails on every request.
+            // The MCP endpoint applies the same check to every request (UserLoginGateMiddleware).
+            var zendesk = zendeskOptions.Value;
+            if (zendesk.UserLoginMode == UserLoginMode.Mapped)
+            {
+                var signInEmail = SignedInUser.GetEmailFromTokenResponse(tokenJson);
+                if (!zendesk.UserMappings.TryGetZendeskEmail(signInEmail, out _))
+                {
+                    logger.LogWarning("OAuth callback: refused {SignInEmail}, not in the user mappings",
+                        signInEmail ?? "(no e-mail claim in token)");
+                    var description = signInEmail is null
+                        ? "Your sign-in token does not include an e-mail address, so this server cannot tell who you are."
+                        : $"{signInEmail} is not allowed to use this server. Ask an administrator to add you to the user mappings.";
+                    return Results.Redirect(ClientRedirect(session,
+                        ("error", "access_denied"),
+                        ("error_description", description)));
+                }
+            }
+
             logger.LogInformation("OAuth callback: token exchange successful, issuing code to client");
 
             var clientCode = Guid.NewGuid().ToString("N");
@@ -195,10 +217,7 @@ public static class OAuthEndpoints
                 ClientCodeChallengeMethod = session.ClientCodeChallengeMethod
             });
 
-            var separator = session.ClientRedirectUri.Contains('?') ? "&" : "?";
-            var clientRedirect = $"{session.ClientRedirectUri}{separator}code={HttpUtility.UrlEncode(clientCode)}&state={HttpUtility.UrlEncode(session.ClientState)}";
-
-            return Results.Redirect(clientRedirect);
+            return Results.Redirect(ClientRedirect(session, ("code", clientCode)));
         }).AllowAnonymous();
 
         // Token endpoint — MCP client exchanges our code for the Entra ID JWT
@@ -276,5 +295,18 @@ public static class OAuthEndpoints
         }).AllowAnonymous();
 
         return app;
+    }
+
+    /// <summary>
+    /// Builds the redirect back to the MCP client: its redirect URI plus the given parameters
+    /// and the client's original state. Used for both the issued code and error responses.
+    /// </summary>
+    internal static string ClientRedirect(AuthSession session, params (string Name, string Value)[] parameters)
+    {
+        var query = string.Join("&", parameters
+            .Append((Name: "state", Value: session.ClientState))
+            .Select(p => $"{p.Name}={HttpUtility.UrlEncode(p.Value)}"));
+        var separator = session.ClientRedirectUri.Contains('?') ? "&" : "?";
+        return $"{session.ClientRedirectUri}{separator}{query}";
     }
 }
