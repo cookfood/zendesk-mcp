@@ -99,6 +99,13 @@ async Task RunHttpAsync(string[] commandArgs)
     {
         builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAd"));
+
+        // Accept the API's client ID and its App ID URI as the audience, and log refused tokens.
+        var clientId = builder.Configuration["AzureAd:ClientId"];
+        var audience = builder.Configuration["AzureAd:Audience"];
+        builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+            .PostConfigure<ILoggerFactory>((options, loggers) => EntraTokenValidation.Apply(
+                options, clientId, audience, loggers.CreateLogger(typeof(EntraTokenValidation).FullName!)));
     }
     else
     {
