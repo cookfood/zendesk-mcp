@@ -8,7 +8,7 @@ namespace ZendeskMcp.Server.Tools;
 [McpServerToolType]
 public static class UserTools
 {
-    [McpServerTool(Name = "get_current_user"), Description("Get the user the API is authenticating as (the shared service account).")]
+    [McpServerTool(Name = "get_current_user"), Description("Get the Zendesk user the API is authenticating as (the shared service account, or the agent mapped to the signed-in user).")]
     public static Task<string> GetCurrentUser(ZendeskClient client, CancellationToken cancellationToken)
         => client.SendAsync(HttpMethod.Get, "users/me.json", cancellationToken: cancellationToken);
 
