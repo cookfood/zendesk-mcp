@@ -109,7 +109,7 @@ runs the OAuth bridge. These map to the `AzureAd` and `OAuth` config sections:
 | --- | --- | --- | --- |
 | Tenant ID | `AzureAd__TenantId` | `<tenant-guid>` | your Entra tenant |
 | Client ID | `AzureAd__ClientId` | `<client-guid>` | the app registration |
-| Audience | `AzureAd__Audience` | `api://<client-guid>` | token audience the API accepts |
+| Audience | `AzureAd__Audience` | `api://<client-guid>` | an extra token audience to accept; the client ID and `api://<client-guid>` are always accepted |
 | OAuth client ID | `OAuth__ClientId` | `<client-guid>` | same app registration |
 | OAuth tenant ID | `OAuth__TenantId` | `<tenant-guid>` | |
 | OAuth scopes | `OAuth__Scopes` | `api://<client-guid>/mcp.read openid profile offline_access` | space-delimited; include `offline_access` for refresh tokens |
@@ -440,6 +440,7 @@ Two separate layers — keep them apart:
 | Someone gets `access_denied` at sign-in, or `403 … is not allowed to use this server` | `Mapped` mode is on and their sign-in address is not in `ZENDESK_USER_MAPPINGS` (or their token carries a different address from the one you mapped). | Add the address shown in the server log's warning, then restart. |
 | Server stops at startup: *UserLoginMode 'Mapped' needs …* | `Mapped` mode on stdio or non-Production HTTP, where there is no signed-in user. | Use Path 3, or set `ZENDESK_USER_LOGIN_MODE=Shared`. |
 | Zendesk returns `401` for one person only | In `Mapped` mode, their mapped Zendesk address is not an agent in the account. | Map them to an existing agent. |
+| Everyone gets `401` from the MCP endpoint once `Mapped` is on | `Mapped` mode is the first time the server itself needs a valid Entra token (in `Shared` mode only the gateway enforces sign-in), and the server's own check refuses it. | The server logs a warning, *Entra access token refused*, naming the reason (for example the token's audience or issuer). Check `AzureAd__TenantId` and `AzureAd__ClientId`; the client ID and `api://<client-id>` are accepted as audiences without extra settings. Set `ZENDESK_USER_LOGIN_MODE=Shared` to restore access while you fix it. |
 | Values look right but auth to Zendesk fails from Docker | `.env` saved with CRLF line endings leaking `\r` (the code trims, but double-check). | Save `.env` with LF line endings. |
 
 ---
