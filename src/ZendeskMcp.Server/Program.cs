@@ -23,6 +23,9 @@ const string serverInstructionsTemplate = """
     - get_ticket and get_ticket_comments give the full context for a ticket.
     - create_ticket, update_ticket and create_ticket_comment WRITE to live Zendesk —
       always confirm with the user before using them.
+    - To attach logs, CSVs, SQL output, or a spreadsheet to a reply, pass them in
+      create_ticket_comment's attachments (format 'xlsx' turns CSV text into an Excel
+      file). The server uploads and attaches them in the same call.
     - For anything not covered by a dedicated tool, use zendesk_request to call any
       Zendesk REST API v2 endpoint directly.
     - {attribution}
