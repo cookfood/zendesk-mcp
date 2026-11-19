@@ -41,7 +41,7 @@ Highlights:
 | Area | Tools |
 | --- | --- |
 | Tickets | `get_ticket`, `get_tickets`, `search_tickets`, `create_ticket`, `update_ticket`, `delete_ticket` |
-| Comments | `get_ticket_comments`, `create_ticket_comment` |
+| Comments | `get_ticket_comments`, `create_ticket_comment` (optional `attachments`, see below) |
 | Attachments | `get_ticket_attachment` (images only, validated, 10 MB cap) |
 | Users | `get_current_user`, `get_user`, `list_users`, `search_users`, `create_user`, `update_user` |
 | Organisations | `get_organization`, `list_organizations`, `search_organizations` |
@@ -50,6 +50,21 @@ Highlights:
 | Macros | `list_macros`, `get_macro` |
 | Help Centre | `search_articles` (plus the `zendesk://knowledge-base` resource) |
 | Anything else | `zendesk_request` — call any Zendesk REST API v2 endpoint directly |
+
+### Attaching files to a comment
+
+`create_ticket_comment` takes an optional `attachments` array, so a reply and its files go in one
+call. The server uploads each file to Zendesk (`POST /api/v2/uploads.json`) and adds the upload
+tokens to the comment; the caller never sees a token. Each item is:
+
+| Field | Meaning |
+| --- | --- |
+| `fileName` | Name shown on the ticket, e.g. `orders.csv`. Any directory part is dropped. |
+| `content` | The file content, as described by `format`. |
+| `format` | `text` (default): logs, CSV, SQL, JSON and other text, sent as UTF-8. `xlsx`: CSV or tab-separated text that the server turns into an Excel workbook (bold, frozen header row; plain numbers as numbers; everything else, including leading-zero IDs and `=` values, as literal text). `base64`: any other binary file. |
+
+Limits: 10 files per comment, 10 MB each. Every file is validated before any is uploaded. `.csv`
+files get a UTF-8 byte order mark so Excel shows characters such as `£` correctly.
 
 It also provides two prompts: `analyze-ticket` and `draft-ticket-response`.
 

@@ -46,17 +46,58 @@ public sealed class ZendeskClient
         object? jsonBody = null,
         CancellationToken cancellationToken = default)
     {
+        HttpContent? content = null;
+        if (jsonBody is not null)
+        {
+            var json = jsonBody is string s ? s : JsonSerializer.Serialize(jsonBody);
+            content = new StringContent(json, Encoding.UTF8, "application/json");
+        }
+
+        return await SendCoreAsync(method, path, query, content, cancellationToken);
+    }
+
+    /// <summary>
+    /// Uploads a file to Zendesk (<c>POST /api/v2/uploads.json</c>) and returns the upload
+    /// token. Passing the token in a comment's <c>uploads</c> array attaches the file to
+    /// that comment; Zendesk discards unused tokens after 60 minutes.
+    /// </summary>
+    public async Task<string> UploadAsync(
+        string fileName,
+        byte[] data,
+        string contentType,
+        CancellationToken cancellationToken = default)
+    {
+        var content = new ByteArrayContent(data);
+        content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+
+        var query = new Dictionary<string, string?> { ["filename"] = fileName };
+        var body = await SendCoreAsync(HttpMethod.Post, "uploads.json", query, content, cancellationToken);
+
+        using var document = JsonDocument.Parse(body);
+        if (document.RootElement.TryGetProperty("upload", out var upload)
+            && upload.TryGetProperty("token", out var token)
+            && token.GetString() is { Length: > 0 } value)
+        {
+            return value;
+        }
+
+        throw new InvalidOperationException($"Zendesk accepted the upload of '{fileName}' but returned no upload token.");
+    }
+
+    private async Task<string> SendCoreAsync(
+        HttpMethod method,
+        string path,
+        IReadOnlyDictionary<string, string?>? query,
+        HttpContent? content,
+        CancellationToken cancellationToken)
+    {
+        using var requestContent = content;
         var authHeader = GetAuthHeader();
         var url = BuildUrl(path, query);
         using var request = new HttpRequestMessage(method, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Basic", authHeader);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
-        if (jsonBody is not null)
-        {
-            var json = jsonBody is string s ? s : JsonSerializer.Serialize(jsonBody);
-            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
-        }
+        request.Content = requestContent;
 
         var client = _httpClientFactory.CreateClient(nameof(ZendeskClient));
         using var response = await client.SendAsync(request, cancellationToken);
