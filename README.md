@@ -42,7 +42,7 @@ Highlights:
 | --- | --- |
 | Tickets | `get_ticket`, `get_tickets`, `search_tickets`, `create_ticket`, `update_ticket`, `delete_ticket` |
 | Comments | `get_ticket_comments`, `create_ticket_comment` (optional `attachments`, see below) |
-| Attachments | `get_ticket_attachment` (images only, validated, 10 MB cap) |
+| Attachments | `get_ticket_attachment` (10 MB cap; images as images, text and `.xlsx` as text paged 40,000 characters at a time with `offset`, PDF and other binaries as a base64 embedded resource) |
 | Users | `get_current_user`, `get_user`, `list_users`, `search_users`, `create_user`, `update_user` |
 | Organisations | `get_organization`, `list_organizations`, `search_organizations` |
 | Groups | `list_groups`, `get_group` |
