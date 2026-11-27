@@ -45,14 +45,17 @@ public static class AttachmentValidator
         return detected;
     }
 
-    private static string NormaliseMime(string contentType)
+    /// <summary>True if <paramref name="mime"/> is one of the image types returned as image content.</summary>
+    internal static bool IsAllowedImageType(string mime) => AllowedMimeTypes.Contains(NormaliseMime(mime));
+
+    internal static string NormaliseMime(string contentType)
     {
         var semicolon = contentType.IndexOf(';');
         var mime = semicolon >= 0 ? contentType[..semicolon] : contentType;
         return mime.Trim();
     }
 
-    private static string? DetectImageType(byte[] data)
+    internal static string? DetectImageType(byte[] data)
     {
         if (data.Length >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF)
             return "image/jpeg";

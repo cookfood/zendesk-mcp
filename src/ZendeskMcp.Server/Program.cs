@@ -26,6 +26,10 @@ const string serverInstructionsTemplate = """
     - To attach logs, CSVs, SQL output, or a spreadsheet to a reply, pass them in
       create_ticket_comment's attachments (format 'xlsx' turns CSV text into an Excel
       file). The server uploads and attaches them in the same call.
+    - To read a file attached to a ticket, pass its content_url from
+      get_ticket_comments to get_ticket_attachment. Text files and Excel workbooks
+      come back as text (paged with offset); images as images; PDFs and other files
+      as base64.
     - For anything not covered by a dedicated tool, use zendesk_request to call any
       Zendesk REST API v2 endpoint directly.
     - {attribution}
